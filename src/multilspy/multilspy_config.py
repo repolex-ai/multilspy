@@ -22,6 +22,7 @@ class Language(str, Enum):
     DART = "dart"
     CPP = "cpp"
     SCALA = "scala"
+    SWIFT = "swift"
 
     def __str__(self) -> str:
         return self.value
