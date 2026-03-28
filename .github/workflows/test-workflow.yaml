@@ -226,6 +226,34 @@ jobs:
         run: |
           pytest tests/multilspy/test_*kotlin*.py -v --tb=short
 
+  # Test Swift language server (SourceKit-LSP)
+  test-swift:
+    name: Test Swift Language Server
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Swift
+        uses: swiftlang/setup-swift@v2
+        with:
+          swift-version: "6.0.3"
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.x"
+          cache: "pip"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install -e .
+
+      - name: Run Swift LSP tests
+        run: |
+          pytest tests/multilspy/test_*swift*.py -v --tb=short
+
   # Test Dart language server
   test-dart:
     name: Test Dart Language Server
@@ -346,6 +374,7 @@ jobs:
             "rust"
             "java"
             "kotlin"
+            "swift"
             "dart"
             "clangd"
             "csharp"
@@ -416,6 +445,7 @@ jobs:
       - test-rust
       - test-java
       - test-kotlin
+      - test-swift
       - test-dart
       - test-clangd
       - test-csharp
@@ -434,6 +464,7 @@ jobs:
             "${{ needs.test-rust.result }}"
             "${{ needs.test-java.result }}"
             "${{ needs.test-kotlin.result }}"
+            "${{ needs.test-swift.result }}"
             "${{ needs.test-dart.result }}"
             "${{ needs.test-clangd.result }}"
             "${{ needs.test-csharp.result }}"
