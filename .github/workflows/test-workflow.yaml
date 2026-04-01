@@ -286,6 +286,29 @@ jobs:
         run: |
           pytest tests/multilspy/test_*swift*.py -v --tb=short
 
+  # Test Elixir language server (Expert)
+  test-elixir:
+    name: Test Elixir Language Server
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.x"
+          cache: "pip"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install -e .
+
+      - name: Run Elixir LSP tests
+        run: |
+          pytest tests/multilspy/test_*elixir*.py -v --tb=short
+
   # Test Dart language server
   test-dart:
     name: Test Dart Language Server
@@ -408,6 +431,7 @@ jobs:
             "kotlin"
             "scala"
             "swift"
+            "elixir"
             "dart"
             "clangd"
             "csharp"
@@ -480,6 +504,7 @@ jobs:
       - test-kotlin
       - test-scala
       - test-swift
+      - test-elixir
       - test-dart
       - test-clangd
       - test-csharp
@@ -500,6 +525,7 @@ jobs:
             "${{ needs.test-kotlin.result }}"
             "${{ needs.test-scala.result }}"
             "${{ needs.test-swift.result }}"
+            "${{ needs.test-elixir.result }}"
             "${{ needs.test-dart.result }}"
             "${{ needs.test-clangd.result }}"
             "${{ needs.test-csharp.result }}"

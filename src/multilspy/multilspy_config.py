@@ -23,6 +23,7 @@ class Language(str, Enum):
     CPP = "cpp"
     SCALA = "scala"
     SWIFT = "swift"
+    ELIXIR = "elixir"
 
     def __str__(self) -> str:
         return self.value

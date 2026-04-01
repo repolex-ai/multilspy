@@ -130,6 +130,10 @@ class LanguageServer:
             from multilspy.language_servers.sourcekit_lsp.sourcekit_lsp import SourceKitLSP
 
             return SourceKitLSP(config, logger, repository_root_path)
+        elif config.code_language == Language.ELIXIR:
+            from multilspy.language_servers.expert_elixir.expert_elixir import ExpertElixir
+
+            return ExpertElixir(config, logger, repository_root_path)
         else:
             logger.log(f"Language {config.code_language} is not supported", logging.ERROR)
             raise MultilspyException(f"Language {config.code_language} is not supported")
