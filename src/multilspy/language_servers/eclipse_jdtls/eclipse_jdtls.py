@@ -134,6 +134,7 @@ class EclipseJDTLS(LanguageServer):
         )
 
         self.service_ready_event = asyncio.Event()
+        self.project_status_ok_event = asyncio.Event()
         self.intellicode_enable_command_available = asyncio.Event()
         self.initialize_searcher_command_available = asyncio.Event()
 
@@ -339,11 +340,18 @@ class EclipseJDTLS(LanguageServer):
             return
 
         async def lang_status_handler(params):
-            # TODO: Should we wait for
-            # server -> client: {'jsonrpc': '2.0', 'method': 'language/status', 'params': {'type': 'ProjectStatus', 'message': 'OK'}}
-            # Before proceeding?
+            # ServiceReady = JDTLS itself is up. Knows the JDK stdlib.
+            # ProjectStatus OK = the SPECIFIC project (e.g. multi-module Maven repo)
+            #     has been imported and indexed. JDTLS now knows the project's
+            #     full classpath.
+            #
+            # We must wait for BOTH before sending requests, otherwise legitimate
+            # symbols (e.g. assertEquals from JUnit on jena's classpath) return None
+            # because JDTLS is still loading the project.
             if params["type"] == "ServiceReady" and params["message"] == "ServiceReady":
                 self.service_ready_event.set()
+            if params["type"] == "ProjectStatus" and params["message"] == "OK":
+                self.project_status_ok_event.set()
 
         async def execute_client_command_handler(params):
             assert params["command"] == "_java.reloadBundles.command"
@@ -396,8 +404,34 @@ class EclipseJDTLS(LanguageServer):
             )
             assert intellicode_enable_result
 
-            # TODO: Add comments about why we wait here, and how this can be optimized
+            # Wait for JDTLS itself to be ready (knows JDK stdlib)
             await self.service_ready_event.wait()
+            self.logger.log("JDTLS ServiceReady received", logging.INFO)
+
+            # ALSO wait for the project to be fully imported and indexed.
+            # Without this, JDTLS returns None for legitimate symbols (e.g.
+            # JUnit's assertEquals on jena's classpath) because it hasn't
+            # finished loading the project's dependencies yet.
+            #
+            # For multi-module Maven projects (like apache/jena) this can take
+            # several minutes — JDTLS reads pom.xml hierarchies and resolves
+            # transitive dependencies from the local Maven cache.
+            #
+            # Optional timeout in case JDTLS never sends ProjectStatus OK
+            # (some project types don't trigger it). Falls through after timeout
+            # rather than hanging forever.
+            try:
+                await asyncio.wait_for(
+                    self.project_status_ok_event.wait(),
+                    timeout=600,  # 10 minutes max
+                )
+                self.logger.log("JDTLS ProjectStatus OK received", logging.INFO)
+            except asyncio.TimeoutError:
+                self.logger.log(
+                    "JDTLS ProjectStatus OK not received within 10min — "
+                    "proceeding anyway. Some symbols may not resolve.",
+                    logging.WARNING,
+                )
 
             yield self
 
