@@ -414,7 +414,9 @@ class LanguageServer:
             )
 
         ret: List[multilspy_types.Location] = []
-        if isinstance(response, list):
+        if response is None:
+            return ret
+        elif isinstance(response, list):
             # response is either of type Location[] or LocationLink[]
             for item in response:
                 assert isinstance(item, dict)
@@ -487,6 +489,8 @@ class LanguageServer:
             )
 
         ret: List[multilspy_types.Location] = []
+        if response is None:
+            return ret
         assert isinstance(response, list), f"Unexpected response from Language Server: {response}"
         for item in response:
             assert isinstance(item, dict)
