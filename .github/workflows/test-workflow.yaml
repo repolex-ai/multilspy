@@ -2,8 +2,9 @@ name: Test Multilspy
 
 on:
   push:
-    branches: [main, feat/*]
+    branches: [main, feat/*, feature/*]
   pull_request:
+  workflow_dispatch:
 
 # Cancel in-progress runs for the same branch
 concurrency:
