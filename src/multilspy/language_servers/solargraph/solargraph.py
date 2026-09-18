@@ -38,7 +38,7 @@ class Solargraph(LanguageServer):
             config,
             logger,
             repository_root_path,
-            ProcessLaunchInfo(cmd=f"{solargraph_executable_path} stdio", cwd=repository_root_path),
+            ProcessLaunchInfo(cmd=[solargraph_executable_path, "stdio"], cwd=repository_root_path),
             "ruby",
         )
         self.server_ready = asyncio.Event()
@@ -47,6 +47,9 @@ class Solargraph(LanguageServer):
         """
         Setup runtime dependencies for Solargraph.
         """
+        if config.server_binary:
+            assert os.path.exists(config.server_binary), f"Server binary not found: {config.server_binary}"
+            return config.server_binary
 
         with open(os.path.join(os.path.dirname(__file__), "runtime_dependencies.json"), "r") as f:
             d = json.load(f)
@@ -181,8 +184,8 @@ class Solargraph(LanguageServer):
 
             self.server_ready.set()
             await self.server_ready.wait()
-
-            yield self
-
-            await self.server.shutdown()
-            await self.server.stop()
+            try:
+                yield self
+            finally:
+                await self.server.shutdown()
+                await self.server.stop()

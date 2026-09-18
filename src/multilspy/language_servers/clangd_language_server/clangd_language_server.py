@@ -18,6 +18,7 @@ from multilspy.lsp_protocol_handler.lsp_types import InitializeParams
 from multilspy.multilspy_config import MultilspyConfig
 from multilspy.multilspy_utils import FileUtils
 from multilspy.multilspy_utils import PlatformUtils
+from multilspy.multilspy_settings import MultilspySettings
 
 
 class ClangdLanguageServer(LanguageServer):
@@ -36,7 +37,7 @@ class ClangdLanguageServer(LanguageServer):
             config,
             logger,
             repository_root_path,
-            ProcessLaunchInfo(cmd=clangd_executable_path, cwd=repository_root_path),
+            ProcessLaunchInfo(cmd=[clangd_executable_path], cwd=repository_root_path),
             "cpp",
         )
         self.server_ready = asyncio.Event()
@@ -45,6 +46,10 @@ class ClangdLanguageServer(LanguageServer):
         """
         Setup runtime dependencies for ClangdLanguageServer.
         """
+        if config.server_binary:
+            assert os.path.exists(config.server_binary), f"Server binary not found: {config.server_binary}"
+            return config.server_binary
+
         platform_id = PlatformUtils.get_platform_id()
 
         with open(os.path.join(os.path.dirname(__file__), "runtime_dependencies.json"), "r") as f:
@@ -67,10 +72,10 @@ class ClangdLanguageServer(LanguageServer):
         if dependency is None:
             raise RuntimeError(f"No runtime dependency found for platform {platform_id.value}")
 
-        clangd_ls_dir = os.path.join(os.path.dirname(__file__), "static", "clangd")
+        clangd_ls_dir = config.server_install_dir or MultilspySettings.get_server_install_directory("clangd")
         clangd_executable_path = os.path.join(clangd_ls_dir, "clangd_19.1.2", "bin", dependency["binaryName"])
-        if not os.path.exists(clangd_ls_dir):
-            os.makedirs(clangd_ls_dir)
+        if not os.path.exists(clangd_executable_path):
+            os.makedirs(clangd_ls_dir, exist_ok=True)
             if dependency["archiveType"] == "zip":
                 FileUtils.download_and_extract_archive(
                     logger, dependency["url"], clangd_ls_dir, dependency["archiveType"]
@@ -181,8 +186,8 @@ class ClangdLanguageServer(LanguageServer):
             # set ready flag
             self.server_ready.set()
             await self.server_ready.wait()
-
-            yield self
-
-            await self.server.shutdown()
-            await self.server.stop()
+            try:
+                yield self
+            finally:
+                await self.server.shutdown()
+                await self.server.stop()

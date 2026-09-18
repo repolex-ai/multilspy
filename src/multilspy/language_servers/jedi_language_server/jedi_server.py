@@ -29,7 +29,7 @@ class JediServer(LanguageServer):
             config,
             logger,
             repository_root_path,
-            ProcessLaunchInfo(cmd="jedi-language-server", cwd=repository_root_path),
+            ProcessLaunchInfo(cmd=[config.server_binary or "jedi-language-server"], cwd=repository_root_path),
             "python",
         )
 
@@ -113,8 +113,8 @@ class JediServer(LanguageServer):
             }
 
             self.server.notify.initialized({})
-
-            yield self
-
-            await self.server.shutdown()
-            await self.server.stop()
+            try:
+                yield self
+            finally:
+                await self.server.shutdown()
+                await self.server.stop()

@@ -50,8 +50,8 @@ class ProcessLaunchInfo:
     This class is used to store the information required to launch a process.
     """
 
-    # The command to launch the process
-    cmd: str
+    # The command to launch the process (either as a shell command string or a list of arguments)
+    cmd: Union[str, List[str]]
 
     # The environment variables to set for the process
     env: Dict[str, str] = dataclasses.field(default_factory=dict)
@@ -222,15 +222,26 @@ class LanguageServerHandler:
         """
         child_proc_env = os.environ.copy()
         child_proc_env.update(self.process_launch_info.env)
-        self.process = await asyncio.create_subprocess_shell(
-            self.process_launch_info.cmd,
-            stdout=asyncio.subprocess.PIPE,
-            stdin=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
-            env=child_proc_env,
-            cwd=self.process_launch_info.cwd,
-            start_new_session=self.start_independent_lsp_process,
-        )
+        if isinstance(self.process_launch_info.cmd, list):
+            self.process = await asyncio.create_subprocess_exec(
+                *self.process_launch_info.cmd,
+                stdout=asyncio.subprocess.PIPE,
+                stdin=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+                env=child_proc_env,
+                cwd=self.process_launch_info.cwd,
+                start_new_session=self.start_independent_lsp_process,
+            )
+        else:
+            self.process = await asyncio.create_subprocess_shell(
+                self.process_launch_info.cmd,
+                stdout=asyncio.subprocess.PIPE,
+                stdin=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+                env=child_proc_env,
+                cwd=self.process_launch_info.cwd,
+                start_new_session=self.start_independent_lsp_process,
+            )
 
         self.loop = asyncio.get_event_loop()
         self.tasks[self.task_counter] = self.loop.create_task(self.run_forever())
@@ -358,7 +369,11 @@ class LanguageServerHandler:
         """
         Perform the shutdown sequence for the client, including sending the shutdown request to the server and notifying it of exit
         """
-        await self.send.shutdown()
+        try:
+            await asyncio.wait_for(self.send.shutdown(), timeout=30)
+        except (asyncio.TimeoutError, Exception):
+            # Server didn't respond to shutdown request; proceed to exit/kill
+            pass
         self._received_shutdown = True
         self.notify.exit()
         if self.process and self.process.stdout:

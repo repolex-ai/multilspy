@@ -492,6 +492,34 @@ jobs:
             echo "All test files are covered by dedicated test jobs."
           fi
 
+  # Test PHP language server (intelephense)
+  test-php:
+    name: Test PHP Language Server (intelephense)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.x"
+          cache: "pip"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install -e .
+
+      - name: Run PHP LSP tests
+        run: |
+          pytest tests/multilspy/test_*php*.py -v --tb=short
+
   # Final job to check all tests passed
   all-tests-passed:
     name: All Tests Passed
@@ -506,6 +534,7 @@ jobs:
       - test-scala
       - test-swift
       - test-elixir
+      - test-php
       - test-dart
       - test-clangd
       - test-csharp
@@ -527,6 +556,7 @@ jobs:
             "${{ needs.test-scala.result }}"
             "${{ needs.test-swift.result }}"
             "${{ needs.test-elixir.result }}"
+            "${{ needs.test-php.result }}"
             "${{ needs.test-dart.result }}"
             "${{ needs.test-clangd.result }}"
             "${{ needs.test-csharp.result }}"
