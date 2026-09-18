@@ -13,6 +13,8 @@ Classifies resolved symbol and definition file paths across all supported langua
 - Ruby: gems/... and vendor/bundle/...
 - C#: NuGet packages in ~/.nuget/packages/...
 - Dart: Pub cache in ~/.pub-cache/hosted/pub.dev/...
+- Lua: LuaRocks packages in ~/.luarocks/... and lua_modules/...
+- Bash: Basher packages, Bats libraries, and bash-completion
 """
 
 import os
@@ -405,7 +407,66 @@ class PathClassifier:
             )
 
         # -------------------------------------------------------------------------
-        # 12. Intra-Repository vs Unclassified External Check
+        # 12. Lua (LuaRocks / Modules)
+        # -------------------------------------------------------------------------
+        # Versioned rocks tree: rocks-5.x/<package>/<version>/...
+        m = re.search(r"(?:^|/)rocks-5\.[0-9]+/([a-zA-Z0-9_.-]+)/([^/]+)/(.*)$", norm_path)
+        if m:
+            return PathClassification(
+                is_external=True,
+                package_name=m.group(1),
+                package_relative_path=m.group(3),
+                ecosystem="LUAROCKS",
+                version=m.group(2),
+            )
+
+        # Module trees: ~/.luarocks/share/lua/5.x/..., lua_modules/share/lua/5.x/..., share/lua/5.x/...
+        m = re.search(r"(?:^|/)(?:\.luarocks|lua_modules|share|lib)/.*?lua/5\.[0-9]+/([a-zA-Z0-9_.-]+?)(?:/(.*)|\.lua)$", norm_path)
+        if m:
+            pkg = m.group(1)
+            rel = m.group(2) if m.group(2) else f"{pkg}.lua"
+            return PathClassification(
+                is_external=True,
+                package_name=pkg,
+                package_relative_path=rel,
+                ecosystem="LUAROCKS",
+            )
+
+        # -------------------------------------------------------------------------
+        # 13. Bash / Shell (Basher, Bats, Completions)
+        # -------------------------------------------------------------------------
+        # Basher packages: ~/.basher/cellar/packages/<author>/<pkg>/...
+        m = re.search(r"\.basher/cellar/packages/([^/]+)/([^/]+)/(.*)$", norm_path)
+        if m:
+            return PathClassification(
+                is_external=True,
+                package_name=f"{m.group(1)}/{m.group(2)}",
+                package_relative_path=m.group(3),
+                ecosystem="BASH",
+            )
+
+        # Bats test libraries: bats-<lib>/...
+        m = re.search(r"(?:^|/)(bats-[a-zA-Z0-9_-]+)/(.*)$", norm_path)
+        if m:
+            return PathClassification(
+                is_external=True,
+                package_name=m.group(1),
+                package_relative_path=m.group(2),
+                ecosystem="BASH",
+            )
+
+        # Bash completion files: bash-completion/completions/<name> or bash_completion.d/<name>
+        m = re.search(r"(?:^|/)(?:bash-completion/completions|bash_completion\.d)/([^/]+)$", norm_path)
+        if m:
+            return PathClassification(
+                is_external=True,
+                package_name="bash-completion",
+                package_relative_path=m.group(1),
+                ecosystem="BASH",
+            )
+
+        # -------------------------------------------------------------------------
+        # 14. Intra-Repository vs Unclassified External Check
         # -------------------------------------------------------------------------
         if repository_root_path:
             norm_repo = cls.normalize_path(repository_root_path).rstrip("/")

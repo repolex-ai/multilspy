@@ -202,3 +202,65 @@ def test_reexport_via_multilspy_utils():
     assert result.is_external is True
     assert result.package_name == "ecto"
     assert result.ecosystem == "HEX"
+
+
+def test_lua_luarocks_classification():
+    # Versioned rocks tree
+    path = "/Users/rob/.luarocks/lib/luarocks/rocks-5.1/inspect/3.1.3-1/lua/inspect.lua"
+    result = PathClassifier.classify(path)
+    assert result.is_external is True
+    assert result.package_name == "inspect"
+    assert result.version == "3.1.3-1"
+    assert result.package_relative_path == "lua/inspect.lua"
+    assert result.ecosystem == "LUAROCKS"
+
+    # User tree single file
+    path = "/Users/rob/.luarocks/share/lua/5.1/inspect.lua"
+    result = PathClassifier.classify(path)
+    assert result.is_external is True
+    assert result.package_name == "inspect"
+    assert result.package_relative_path == "inspect.lua"
+    assert result.ecosystem == "LUAROCKS"
+
+    # Workspace lua_modules
+    path = "/repo/lua_modules/share/lua/5.4/cjson/util.lua"
+    result = PathClassifier.classify(path)
+    assert result.is_external is True
+    assert result.package_name == "cjson"
+    assert result.package_relative_path == "util.lua"
+    assert result.ecosystem == "LUAROCKS"
+
+    # System share/lua
+    path = "/usr/local/share/lua/5.3/pl/stringx.lua"
+    result = PathClassifier.classify(path)
+    assert result.is_external is True
+    assert result.package_name == "pl"
+    assert result.package_relative_path == "stringx.lua"
+    assert result.ecosystem == "LUAROCKS"
+
+
+def test_bash_classification():
+    # Basher package
+    path = "/Users/rob/.basher/cellar/packages/bats-core/bats-core/bin/bats"
+    result = PathClassifier.classify(path)
+    assert result.is_external is True
+    assert result.package_name == "bats-core/bats-core"
+    assert result.package_relative_path == "bin/bats"
+    assert result.ecosystem == "BASH"
+
+    # Bats test library
+    path = "/usr/lib/bats-assert/load.bash"
+    result = PathClassifier.classify(path)
+    assert result.is_external is True
+    assert result.package_name == "bats-assert"
+    assert result.package_relative_path == "load.bash"
+    assert result.ecosystem == "BASH"
+
+    # Bash completion
+    path = "/usr/share/bash-completion/completions/git"
+    result = PathClassifier.classify(path)
+    assert result.is_external is True
+    assert result.package_name == "bash-completion"
+    assert result.package_relative_path == "git"
+    assert result.ecosystem == "BASH"
+
