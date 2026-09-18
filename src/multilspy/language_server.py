@@ -138,6 +138,14 @@ class LanguageServer:
             from multilspy.language_servers.intelephense.intelephense import Intelephense
 
             return Intelephense(config, logger, repository_root_path)
+        elif config.code_language == Language.LUA:
+            from multilspy.language_servers.lua_language_server.lua_language_server import LuaLanguageServer
+
+            return LuaLanguageServer(config, logger, repository_root_path)
+        elif config.code_language == Language.BASH:
+            from multilspy.language_servers.bash_language_server.bash_language_server import BashLanguageServer
+
+            return BashLanguageServer(config, logger, repository_root_path)
         else:
             logger.log(f"Language {config.code_language} is not supported", logging.ERROR)
             raise MultilspyException(f"Language {config.code_language} is not supported")

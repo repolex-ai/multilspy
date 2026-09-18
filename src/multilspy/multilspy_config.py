@@ -26,6 +26,8 @@ class Language(str, Enum):
     SWIFT = "swift"
     ELIXIR = "elixir"
     PHP = "php"
+    LUA = "lua"
+    BASH = "bash"
 
     def __str__(self) -> str:
         return self.value
