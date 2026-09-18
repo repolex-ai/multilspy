@@ -21,6 +21,9 @@ class Language(str, Enum):
     RUBY = "ruby"
     DART = "dart"
     CPP = "cpp"
+    SCALA = "scala"
+    SWIFT = "swift"
+    ELIXIR = "elixir"
 
     def __str__(self) -> str:
         return self.value
@@ -33,6 +36,7 @@ class MultilspyConfig:
     code_language: Language
     trace_lsp_communication: bool = False
     start_independent_lsp_process: bool = True
+    request_timeout: float = 30.0
 
     @classmethod
     def from_dict(cls, env: dict):

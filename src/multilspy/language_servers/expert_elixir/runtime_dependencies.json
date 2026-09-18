@@ -1,0 +1,40 @@
+{
+    "_description": "Used to download the runtime dependencies for Expert, the official Elixir Language Server. Expert ships self-contained binaries with the BEAM VM bundled via Burrito. See https://github.com/elixir-lang/expert for details.",
+    "runtimeDependencies": [
+        {
+            "id": "ExpertElixir",
+            "description": "Expert Elixir Language Server for Linux (x64)",
+            "url": "https://github.com/elixir-lang/expert/releases/download/v0.1.0/expert_linux_amd64",
+            "platformId": "linux-x64",
+            "binaryName": "expert"
+        },
+        {
+            "id": "ExpertElixir",
+            "description": "Expert Elixir Language Server for Linux (arm64)",
+            "url": "https://github.com/elixir-lang/expert/releases/download/v0.1.0/expert_linux_arm64",
+            "platformId": "linux-arm64",
+            "binaryName": "expert"
+        },
+        {
+            "id": "ExpertElixir",
+            "description": "Expert Elixir Language Server for macOS (x64)",
+            "url": "https://github.com/elixir-lang/expert/releases/download/v0.1.0/expert_darwin_amd64",
+            "platformId": "osx-x64",
+            "binaryName": "expert"
+        },
+        {
+            "id": "ExpertElixir",
+            "description": "Expert Elixir Language Server for macOS (arm64)",
+            "url": "https://github.com/elixir-lang/expert/releases/download/v0.1.0/expert_darwin_arm64",
+            "platformId": "osx-arm64",
+            "binaryName": "expert"
+        },
+        {
+            "id": "ExpertElixir",
+            "description": "Expert Elixir Language Server for Windows (x64)",
+            "url": "https://github.com/elixir-lang/expert/releases/download/v0.1.0/expert_windows_amd64.exe",
+            "platformId": "win-x64",
+            "binaryName": "expert.exe"
+        }
+    ]
+}

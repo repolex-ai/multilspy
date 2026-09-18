@@ -106,3 +106,30 @@ async def test_multilspy_python_black():
                     },
                 },
             ]
+
+
+@pytest.mark.asyncio
+async def test_multilspy_python_unresolvable_definition_returns_empty_list():
+    """
+    Test that request_definition returns an empty list [] rather than raising
+    an AssertionError when the language server returns null/None for a location
+    with no resolvable symbol (e.g. comments/whitespace per LSP 3.17 spec).
+    """
+    params = {
+        "code_language": Language.PYTHON,
+        "repo_url": "https://github.com/psf/black/",
+        "repo_commit": "f3b50e466969f9142393ec32a4b2a383ffbe5f23"
+    }
+    with create_test_context(params) as context:
+        lsp = LanguageServer.create(context.config, context.logger, context.source_directory)
+        async with lsp.start_server():
+            # Line 0 col 0 in src/black/mode.py is inside the file docstring where
+            # the LSP server returns null (None).
+            result = await lsp.request_definition(str(PurePath("src/black/mode.py")), 0, 0)
+            assert isinstance(result, list)
+            assert result == []
+
+            # Similarly, references on an unreferenced non-symbol should return []
+            ref_result = await lsp.request_references(str(PurePath("src/black/mode.py")), 0, 0)
+            assert isinstance(ref_result, list)
+            assert ref_result == []
