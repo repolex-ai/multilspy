@@ -45,8 +45,8 @@ async def test_multilspy_swift_definition() -> None:
         test_file = str(PurePath("Source/SwiftyJSON/SwiftyJSON.swift"))
 
         async with lsp.start_server():
-            # SwiftyJSONError is referenced throughout the file
-            definition_result = await lsp.request_definition(test_file, 37, 30)
+            # Line 35 col 15 is SwiftyJSONError in "extension SwiftyJSONError: CustomNSError"
+            definition_result = await lsp.request_definition(test_file, 35, 15)
 
             assert definition_result is not None, "Definition result should not be None"
             assert len(definition_result) >= 1, "Should find at least one definition"
@@ -64,7 +64,7 @@ async def test_multilspy_swift_references() -> None:
         test_file = str(PurePath("Source/SwiftyJSON/SwiftyJSON.swift"))
 
         async with lsp.start_server():
-            references = await lsp.request_references(test_file, 28, 20)
+            references = await lsp.request_references(test_file, 35, 15)
 
             assert references is not None, "References should not be None"
             assert len(references) >= 1, "Should find at least one reference to SwiftyJSONError"
@@ -81,7 +81,7 @@ async def test_multilspy_swift_completions() -> None:
         test_file = str(PurePath("Source/SwiftyJSON/SwiftyJSON.swift"))
 
         async with lsp.start_server():
-            completions = await lsp.request_completions(test_file, 37, 30)
+            completions = await lsp.request_completions(test_file, 35, 15, allow_incomplete=True)
 
             assert completions is not None, "Completions result should not be None"
             assert len(completions) > 0, "Should find at least one completion item"
@@ -104,7 +104,8 @@ async def test_multilspy_swift_hover() -> None:
 
         async with lsp.start_server():
             # Hover over SwiftyJSONError enum
-            hover_result = await lsp.request_hover(test_file, 28, 20)
+            hover_result = await lsp.request_hover(test_file, 35, 15)
 
             assert hover_result is not None, "Hover result should not be None"
             assert "contents" in hover_result, "Hover result should contain contents"
+

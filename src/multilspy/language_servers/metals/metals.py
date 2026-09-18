@@ -56,6 +56,7 @@ class Metals(LanguageServer):
         # Track active $/progress tokens to know when Metals is quiescent
         self._active_progress_tokens: set = set()
         self._indexing_complete = asyncio.Event()
+        self._no_indexing_started = True
 
         super().__init__(
             config,
@@ -85,15 +86,15 @@ class Metals(LanguageServer):
         java_dependency = d["java"][platform_id.value]
 
         # Setup paths for dependencies
-        static_dir = os.path.join(os.path.dirname(__file__), "static")
+        static_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "static"))
         os.makedirs(static_dir, exist_ok=True)
 
         # Setup Java paths
         java_dir = os.path.join(static_dir, "java")
         os.makedirs(java_dir, exist_ok=True)
 
-        java_home_path = os.path.join(java_dir, java_dependency["java_home_path"])
-        java_path = os.path.join(java_dir, java_dependency["java_path"])
+        java_home_path = os.path.abspath(os.path.join(java_dir, java_dependency["java_home_path"]))
+        java_path = os.path.abspath(os.path.join(java_dir, java_dependency["java_path"]))
 
         # Download and extract Java if not exists
         if not os.path.exists(java_path):
@@ -115,9 +116,9 @@ class Metals(LanguageServer):
         metals_artifact = metals_config["mavenArtifact"]
 
         if platform_id.value.startswith("win-"):
-            metals_executable_path = os.path.join(metals_dir, "metals.bat")
+            metals_executable_path = os.path.abspath(os.path.join(metals_dir, "metals.bat"))
         else:
-            metals_executable_path = os.path.join(metals_dir, "metals")
+            metals_executable_path = os.path.abspath(os.path.join(metals_dir, "metals"))
 
         if not os.path.exists(metals_executable_path):
             logger.log(f"Bootstrapping Metals {metals_version} via Coursier...", logging.INFO)
@@ -280,6 +281,10 @@ class Metals(LanguageServer):
         async def window_log_message(msg):
             self.logger.log(f"LSP: window/logMessage: {msg}", logging.INFO)
 
+        async def work_done_progress_create(params):
+            self.logger.log(f"LSP: window/workDoneProgress/create token={params.get('token')}", logging.INFO)
+            return None
+
         async def handle_progress(params):
             """
             Track $/progress tokens to detect when Metals finishes build import,
@@ -291,6 +296,7 @@ class Metals(LanguageServer):
             kind = value.get("kind", "")
 
             if kind == "begin":
+                self._no_indexing_started = False
                 self._active_progress_tokens.add(token)
                 self.logger.log(
                     f"LSP: $/progress begin: {value.get('title', '')} ({token})",
@@ -319,7 +325,32 @@ class Metals(LanguageServer):
                     {"command": "build-import", "arguments": []}
                 )
 
+        async def workspace_configuration_handler(params):
+            items = params.get("items", []) if isinstance(params, dict) else []
+            self.logger.log(f"LSP: workspace/configuration items={items}", logging.INFO)
+            result = []
+            for item in items:
+                section = item.get("section", "")
+                if section == "metals" or not section:
+                    result.append({
+                        "autoImportBuilds": "off",
+                        "fallbackScalaVersion": "2.13.14",
+                    })
+                else:
+                    result.append({})
+            return result
+
+        async def window_show_message_request(params):
+            self.logger.log(f"LSP: window/showMessageRequest: {params}", logging.INFO)
+            return None
+
+        async def semantic_tokens_refresh_handler(params):
+            return None
+
         self.server.on_request("client/registerCapability", do_nothing)
+        self.server.on_request("window/workDoneProgress/create", work_done_progress_create)
+        self.server.on_request("window/showMessageRequest", window_show_message_request)
+        self.server.on_request("workspace/semanticTokens/refresh", semantic_tokens_refresh_handler)
         self.server.on_notification("language/status", do_nothing)
         self.server.on_notification("window/logMessage", window_log_message)
         self.server.on_request("workspace/executeClientCommand", execute_client_command_handler)
@@ -328,7 +359,7 @@ class Metals(LanguageServer):
         self.server.on_notification("language/actionableNotification", do_nothing)
         self.server.on_notification("metals/status", do_nothing)
         self.server.on_notification("metals/executeClientCommand", metals_execute_client_command)
-        self.server.on_request("workspace/configuration", do_nothing)
+        self.server.on_request("workspace/configuration", workspace_configuration_handler)
 
         async with super().start_server():
             self.logger.log("Starting Metals server process", logging.INFO)
@@ -371,14 +402,36 @@ class Metals(LanguageServer):
                 "Waiting for Metals to complete build import and indexing...",
                 logging.INFO,
             )
-            await self._indexing_complete.wait()
-            self.logger.log("Metals indexing complete, server is ready", logging.INFO)
+            try:
+                await asyncio.wait_for(self._indexing_complete.wait(), timeout=10.0)
+            except asyncio.TimeoutError:
+                if self._no_indexing_started:
+                    self.logger.log(
+                        "No background indexing detected from Metals, proceeding immediately",
+                        logging.INFO,
+                    )
+                else:
+                    self.logger.log(
+                        "Background indexing in progress for Metals, waiting for completion...",
+                        logging.INFO,
+                    )
+                    try:
+                        await asyncio.wait_for(self._indexing_complete.wait(), timeout=60.0)
+                    except asyncio.TimeoutError:
+                        self.logger.log(
+                            "Metals indexing wait timed out, proceeding with available index",
+                            logging.WARNING,
+                        )
+            self.logger.log("Metals is ready", logging.INFO)
 
             yield self
 
             try:
-                await self.server.shutdown()
+                await asyncio.wait_for(self.server.shutdown(), timeout=5.0)
             except Exception as e:
                 self.logger.log(f"Error during Metals server shutdown: {str(e)}", logging.WARNING)
             finally:
-                await self.server.stop()
+                try:
+                    await asyncio.wait_for(self.server.stop(), timeout=5.0)
+                except Exception:
+                    pass

@@ -156,7 +156,12 @@ class ExpertElixir(LanguageServer):
                 if not active_progress_tokens and not indexing_complete.is_set():
                     indexing_complete.set()
 
+        async def work_done_progress_create(params):
+            self.logger.log(f"LSP: window/workDoneProgress/create token={params.get('token')}", logging.INFO)
+            return None
+
         self.server.on_request("client/registerCapability", do_nothing)
+        self.server.on_request("window/workDoneProgress/create", work_done_progress_create)
         self.server.on_notification("window/logMessage", window_log_message)
         self.server.on_request("workspace/executeClientCommand", execute_client_command_handler)
         self.server.on_notification("$/progress", handle_progress)
@@ -207,7 +212,13 @@ class ExpertElixir(LanguageServer):
                         "Background compilation in progress, waiting for completion...",
                         logging.INFO,
                     )
-                    await indexing_complete.wait()
+                    try:
+                        await asyncio.wait_for(indexing_complete.wait(), timeout=60.0)
+                    except asyncio.TimeoutError:
+                        self.logger.log(
+                            "Background compilation wait timed out after 60s, proceeding with available index",
+                            logging.WARNING,
+                        )
 
             self.logger.log("Expert Elixir Language Server is ready", logging.INFO)
 

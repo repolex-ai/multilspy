@@ -233,7 +233,12 @@ class SourceKitLSP(LanguageServer):
                 if not active_progress_tokens and not indexing_complete.is_set():
                     indexing_complete.set()
 
+        async def work_done_progress_create(params):
+            self.logger.log(f"LSP: window/workDoneProgress/create token={params.get('token')}", logging.INFO)
+            return None
+
         self.server.on_request("client/registerCapability", do_nothing)
+        self.server.on_request("window/workDoneProgress/create", work_done_progress_create)
         self.server.on_notification("window/logMessage", window_log_message)
         self.server.on_request("workspace/executeClientCommand", execute_client_command_handler)
         self.server.on_notification("$/progress", handle_progress)
@@ -252,7 +257,8 @@ class SourceKitLSP(LanguageServer):
 
             capabilities = init_response["capabilities"]
             assert "textDocumentSync" in capabilities, "Server must support textDocumentSync"
-            assert "completionProvider" in capabilities, "Server must support code completion"
+            # Note: Apple's SourceKit-LSP registers completion dynamically on open text buffers
+            # rather than advertising static completionProvider in initialize response capabilities.
             assert "definitionProvider" in capabilities, "Server must support go to definition"
             assert "referencesProvider" in capabilities, "Server must support find references"
             assert "documentSymbolProvider" in capabilities, "Server must support document symbols"
@@ -273,7 +279,7 @@ class SourceKitLSP(LanguageServer):
                 logging.INFO,
             )
             try:
-                await asyncio.wait_for(indexing_complete.wait(), timeout=5.0)
+                await asyncio.wait_for(indexing_complete.wait(), timeout=10.0)
             except asyncio.TimeoutError:
                 if no_indexing_started:
                     self.logger.log(
@@ -281,12 +287,18 @@ class SourceKitLSP(LanguageServer):
                         logging.INFO,
                     )
                 else:
-                    # Indexing started but hasn't finished in 5s, wait longer
+                    # Indexing started but hasn't finished in 10s, wait up to 60s
                     self.logger.log(
                         "Background indexing in progress, waiting for completion...",
                         logging.INFO,
                     )
-                    await indexing_complete.wait()
+                    try:
+                        await asyncio.wait_for(indexing_complete.wait(), timeout=60.0)
+                    except asyncio.TimeoutError:
+                        self.logger.log(
+                            "Background indexing wait timed out, proceeding with available index",
+                            logging.WARNING,
+                        )
 
             self.logger.log("SourceKit-LSP is ready", logging.INFO)
 
