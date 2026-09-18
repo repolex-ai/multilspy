@@ -36,6 +36,7 @@ class MultilspyConfig:
     code_language: Language
     trace_lsp_communication: bool = False
     start_independent_lsp_process: bool = True
+    request_timeout: float = 30.0
 
     @classmethod
     def from_dict(cls, env: dict):
