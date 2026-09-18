@@ -407,6 +407,8 @@ src/multilspy/language_servers/clangd_language_server/static/
 src/multilspy/language_servers/metals/static/
 src/multilspy/language_servers/expert_elixir/static/
 src/multilspy/language_servers/sourcekit_lsp/static/
+src/multilspy/language_servers/intelephense/static/
+src/multilspy/language_servers/elixir_language_server/static/
 
 # Virtual Environment
 .venv/

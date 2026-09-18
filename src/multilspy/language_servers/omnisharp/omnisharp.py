@@ -7,6 +7,7 @@ import json
 import logging
 import os
 import pathlib
+
 import stat
 from contextlib import asynccontextmanager
 from typing import AsyncIterator, Iterable
@@ -18,6 +19,7 @@ from multilspy.lsp_protocol_handler.lsp_types import InitializeParams
 from multilspy.multilspy_config import MultilspyConfig
 from multilspy.multilspy_exceptions import MultilspyException
 from multilspy.multilspy_utils import FileUtils, PlatformUtils, PlatformId, DotnetVersion
+from multilspy.multilspy_settings import MultilspySettings
 
 
 def breadth_first_file_scan(root) -> Iterable[str]:
@@ -69,8 +71,7 @@ class OmniSharp(LanguageServer):
             logger.log("No *.sln file found in repository", logging.ERROR)
             raise MultilspyException("No SLN file found in repository")
 
-        cmd = " ".join(
-            [
+        cmd = [
                 omnisharp_executable_path,
                 "-lsp",
                 "--encoding",
@@ -100,7 +101,6 @@ class OmniSharp(LanguageServer):
                 "formattingOptions:tabSize=4",
                 "formattingOptions:indentationSize=4",
             ]
-        )
         super().__init__(
             config, logger, repository_root_path, ProcessLaunchInfo(cmd=cmd, cwd=repository_root_path), "csharp"
         )
@@ -136,6 +136,10 @@ class OmniSharp(LanguageServer):
         """
         Setup runtime dependencies for OmniSharp.
         """
+        if config.server_binary:
+            assert os.path.exists(config.server_binary), f"Server binary not found: {config.server_binary}"
+            return config.server_binary, ""
+
         platform_id = PlatformUtils.get_platform_id()
         dotnet_version = PlatformUtils.get_dotnet_version()
 
@@ -176,25 +180,26 @@ class OmniSharp(LanguageServer):
         assert "OmniSharp" in runtime_dependencies
         assert "RazorOmnisharp" in runtime_dependencies
 
-        omnisharp_ls_dir = os.path.join(os.path.dirname(__file__), "static", "OmniSharp")
-        if not os.path.exists(omnisharp_ls_dir):
-            os.makedirs(omnisharp_ls_dir)
+        base_install_dir = config.server_install_dir or MultilspySettings.get_server_install_directory("OmniSharp")
+        omnisharp_ls_dir = os.path.join(base_install_dir, "OmniSharp")
+        omnisharp_executable_path = os.path.join(omnisharp_ls_dir, runtime_dependencies["OmniSharp"]["binaryName"])
+        if not os.path.exists(omnisharp_executable_path):
+            os.makedirs(omnisharp_ls_dir, exist_ok=True)
             FileUtils.download_and_extract_archive(
                 logger, runtime_dependencies["OmniSharp"]["url"], omnisharp_ls_dir, "zip"
             )
-        omnisharp_executable_path = os.path.join(omnisharp_ls_dir, runtime_dependencies["OmniSharp"]["binaryName"])
         assert os.path.exists(omnisharp_executable_path)
         os.chmod(omnisharp_executable_path, stat.S_IEXEC)
 
-        razor_omnisharp_ls_dir = os.path.join(os.path.dirname(__file__), "static", "RazorOmnisharp")
-        if not os.path.exists(razor_omnisharp_ls_dir):
-            os.makedirs(razor_omnisharp_ls_dir)
-            FileUtils.download_and_extract_archive(
-                logger, runtime_dependencies["RazorOmnisharp"]["url"], razor_omnisharp_ls_dir, "zip"
-            )
+        razor_omnisharp_ls_dir = os.path.join(base_install_dir, "RazorOmnisharp")
         razor_omnisharp_dll_path = os.path.join(
             razor_omnisharp_ls_dir, runtime_dependencies["RazorOmnisharp"]["dll_path"]
         )
+        if not os.path.exists(razor_omnisharp_dll_path):
+            os.makedirs(razor_omnisharp_ls_dir, exist_ok=True)
+            FileUtils.download_and_extract_archive(
+                logger, runtime_dependencies["RazorOmnisharp"]["url"], razor_omnisharp_ls_dir, "zip"
+            )
         assert os.path.exists(razor_omnisharp_dll_path)
 
         return omnisharp_executable_path, razor_omnisharp_dll_path
@@ -396,8 +401,8 @@ class OmniSharp(LanguageServer):
 
             await self.definition_available.wait()
             await self.references_available.wait()
-
-            yield self
-
-            await self.server.shutdown()
-            await self.server.stop()
+            try:
+                yield self
+            finally:
+                await self.server.shutdown()
+                await self.server.stop()

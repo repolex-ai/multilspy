@@ -97,8 +97,7 @@ class EclipseJDTLS(LanguageServer):
         # TODO: Add "self.runtime_dependency_paths.jre_home_path"/bin to $PATH as well
         proc_env = {"syntaxserver": "false", "JAVA_HOME": self.runtime_dependency_paths.jre_home_path}
         proc_cwd = repository_root_path
-        cmd = " ".join(
-            [
+        cmd = [
                 jre_path,
                 "--add-modules=ALL-SYSTEM",
                 "--add-opens",
@@ -131,7 +130,6 @@ class EclipseJDTLS(LanguageServer):
                 "-data",
                 data_dir,
             ]
-        )
 
         self.service_ready_event = asyncio.Event()
         self.intellicode_enable_command_available = asyncio.Event()
@@ -149,24 +147,21 @@ class EclipseJDTLS(LanguageServer):
             runtimeDependencies = json.load(f)
             del runtimeDependencies["_description"]
 
-        os.makedirs(str(PurePath(os.path.abspath(os.path.dirname(__file__)), "static")), exist_ok=True)
+        static_dir = config.server_install_dir or MultilspySettings.get_server_install_directory("EclipseJDTLS")
+        os.makedirs(static_dir, exist_ok=True)
 
-        # assert platformId.value in [
-        #     "linux-x64",
-        #     "win-x64",
-        # ], "Only linux-x64 platform is supported for in multilspy at the moment"
-
+        gradle_version = runtimeDependencies["gradle"]["platform-agnostic"]["version"]
         gradle_path = str(
             PurePath(
-                os.path.abspath(os.path.dirname(__file__)),
-                "static/gradle-7.3.3",
+                static_dir,
+                f"gradle-{gradle_version}",
             )
         )
 
         if not os.path.exists(gradle_path):
             FileUtils.download_and_extract_archive(
                 logger,
-                runtimeDependencies["gradle"]["platform-agnostic"]["url"],
+                runtimeDependencies["gradle"]["platform-agnostic"]["url"].format(version=gradle_version),
                 str(PurePath(gradle_path).parent),
                 runtimeDependencies["gradle"]["platform-agnostic"]["archiveType"],
             )
@@ -175,7 +170,7 @@ class EclipseJDTLS(LanguageServer):
 
         dependency = runtimeDependencies["vscode-java"][platformId.value]
         vscode_java_path = str(
-            PurePath(os.path.abspath(os.path.dirname(__file__)), "static", dependency["relative_extraction_path"])
+            PurePath(static_dir, dependency["relative_extraction_path"])
         )
         os.makedirs(vscode_java_path, exist_ok=True)
         jre_home_path = str(PurePath(vscode_java_path, dependency["jre_home_path"]))
@@ -208,7 +203,7 @@ class EclipseJDTLS(LanguageServer):
 
         dependency = runtimeDependencies["intellicode"]["platform-agnostic"]
         intellicode_directory_path = str(
-            PurePath(os.path.abspath(os.path.dirname(__file__)), "static", dependency["relative_extraction_path"])
+            PurePath(static_dir, dependency["relative_extraction_path"])
         )
         os.makedirs(intellicode_directory_path, exist_ok=True)
         intellicode_jar_path = str(PurePath(intellicode_directory_path, dependency["intellicode_jar_path"]))
@@ -280,10 +275,10 @@ class EclipseJDTLS(LanguageServer):
         d["initializationOptions"]["bundles"] = bundles
 
         assert d["initializationOptions"]["settings"]["java"]["configuration"]["runtimes"] == [
-            {"name": "JavaSE-17", "path": "static/vscode-java/extension/jre/17.0.8.1-linux-x86_64", "default": True}
+            {"name": "JavaSE-21", "path": "static/vscode-java/extension/jre/21.0.8-linux-x86_64", "default": True}
         ]
         d["initializationOptions"]["settings"]["java"]["configuration"]["runtimes"] = [
-            {"name": "JavaSE-17", "path": self.runtime_dependency_paths.jre_home_path, "default": True}
+            {"name": "JavaSE-21", "path": self.runtime_dependency_paths.jre_home_path, "default": True}
         ]
 
         for runtime in d["initializationOptions"]["settings"]["java"]["configuration"]["runtimes"]:
@@ -293,7 +288,7 @@ class EclipseJDTLS(LanguageServer):
                 runtime["path"]
             ), f"Runtime required for eclipse_jdtls at path {runtime['path']} does not exist"
 
-        assert d["initializationOptions"]["settings"]["java"]["import"]["gradle"]["home"] == "abs(static/gradle-7.3.3)"
+        assert d["initializationOptions"]["settings"]["java"]["import"]["gradle"]["home"] == "abs(static/gradle-7.6.6)"
         d["initializationOptions"]["settings"]["java"]["import"]["gradle"][
             "home"
         ] = self.runtime_dependency_paths.gradle_path
@@ -321,20 +316,11 @@ class EclipseJDTLS(LanguageServer):
         """
 
         async def register_capability_handler(params):
-            assert "registrations" in params
-            for registration in params["registrations"]:
+            for registration in params.get("registrations", []):
                 if registration["method"] == "textDocument/completion":
-                    assert registration["registerOptions"]["resolveProvider"] == True
-                    assert registration["registerOptions"]["triggerCharacters"] == [
-                        ".",
-                        "@",
-                        "#",
-                        "*",
-                        " ",
-                    ]
                     self.completions_available.set()
                 if registration["method"] == "workspace/executeCommand":
-                    if "java.intellicode.enable" in registration["registerOptions"]["commands"]:
+                    if "java.intellicode.enable" in registration.get("registerOptions", {}).get("commands", []):
                         self.intellicode_enable_command_available.set()
             return
 
@@ -346,8 +332,6 @@ class EclipseJDTLS(LanguageServer):
                 self.service_ready_event.set()
 
         async def execute_client_command_handler(params):
-            assert params["command"] == "_java.reloadBundles.command"
-            assert params["arguments"] == []
             return []
 
         async def window_log_message(msg):
@@ -375,8 +359,11 @@ class EclipseJDTLS(LanguageServer):
             )
             init_response = await self.server.send.initialize(initialize_params)
             assert init_response["capabilities"]["textDocumentSync"]["change"] == 2
-            assert "completionProvider" not in init_response["capabilities"]
-            assert "executeCommandProvider" not in init_response["capabilities"]
+
+            # If completionProvider is already in init response (newer JDTLS),
+            # completions are statically registered and available immediately
+            if "completionProvider" in init_response["capabilities"]:
+                self.completions_available.set()
 
             self.server.notify.initialized({})
 
@@ -384,22 +371,36 @@ class EclipseJDTLS(LanguageServer):
                 {"settings": initialize_params["initializationOptions"]["settings"]}
             )
 
-            await self.intellicode_enable_command_available.wait()
+            # Wait for dynamic capability registration and enable IntelliCode if available.
+            # Newer JDTLS versions (>= 1.40) may not use dynamic registration for
+            # executeCommand, so IntelliCode enabling is best-effort.
+            try:
+                await asyncio.wait_for(self.intellicode_enable_command_available.wait(), timeout=30)
+                java_intellisense_members_path = self.runtime_dependency_paths.intellisense_members_path
+                if os.path.exists(java_intellisense_members_path):
+                    await self.server.send.execute_command(
+                        {
+                            "command": "java.intellicode.enable",
+                            "arguments": [True, java_intellisense_members_path],
+                        }
+                    )
+            except asyncio.TimeoutError:
+                self.logger.log(
+                    "IntelliCode dynamic registration not received, proceeding without IntelliCode",
+                    logging.WARNING,
+                )
 
-            java_intellisense_members_path = self.runtime_dependency_paths.intellisense_members_path
-            assert os.path.exists(java_intellisense_members_path)
-            intellicode_enable_result = await self.server.send.execute_command(
-                {
-                    "command": "java.intellicode.enable",
-                    "arguments": [True, java_intellisense_members_path],
-                }
-            )
-            assert intellicode_enable_result
-
-            # TODO: Add comments about why we wait here, and how this can be optimized
-            await self.service_ready_event.wait()
-
-            yield self
-
-            await self.server.shutdown()
-            await self.server.stop()
+            # Wait for service ready, or proceed after timeout (completions may
+            # already be available via static registration in newer JDTLS versions)
+            try:
+                await asyncio.wait_for(self.service_ready_event.wait(), timeout=60)
+            except asyncio.TimeoutError:
+                self.logger.log(
+                    "ServiceReady notification not received, proceeding anyway",
+                    logging.WARNING,
+                )
+            try:
+                yield self
+            finally:
+                await self.server.shutdown()
+                await self.server.stop()

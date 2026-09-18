@@ -19,6 +19,7 @@ from multilspy.lsp_protocol_handler.lsp_types import InitializeParams
 from multilspy.multilspy_config import MultilspyConfig
 from multilspy.multilspy_utils import FileUtils
 from multilspy.multilspy_utils import PlatformUtils
+from multilspy.multilspy_settings import MultilspySettings
 
 
 @dataclasses.dataclass
@@ -44,7 +45,7 @@ class KotlinLanguageServer(LanguageServer):
         self.runtime_dependency_paths = runtime_dependency_paths
         
         # Create command to execute the Kotlin Language Server script
-        cmd = f'"{self.runtime_dependency_paths.kotlin_executable_path}"'
+        cmd = [self.runtime_dependency_paths.kotlin_executable_path]
         
         # Set environment variables including JAVA_HOME
         proc_env = {"JAVA_HOME": self.runtime_dependency_paths.java_home_path}
@@ -75,7 +76,7 @@ class KotlinLanguageServer(LanguageServer):
         java_dependency = d["java"][platform_id.value]
 
         # Setup paths for dependencies
-        static_dir = os.path.join(os.path.dirname(__file__), "static")
+        static_dir = config.server_install_dir or MultilspySettings.get_server_install_directory("KotlinLanguageServer")
         os.makedirs(static_dir, exist_ok=True)
         
         # Setup Java paths
@@ -223,12 +224,15 @@ class KotlinLanguageServer(LanguageServer):
             
             self.server.notify.initialized({})
             self.completions_available.set()
-
-            yield self
-
             try:
-                await self.server.shutdown()
-            except Exception as e:
-                self.logger.log(f"Error during Kotlin server shutdown: {str(e)}", logging.WARNING)
+                yield self
             finally:
-                await self.server.stop()
+                try:
+                    await self.server.shutdown()
+                except Exception as e:
+                    self.logger.log(
+                        f"Error during Kotlin server shutdown: {str(e)}",
+                        logging.WARNING,
+                    )
+                finally:
+                    await self.server.stop()
