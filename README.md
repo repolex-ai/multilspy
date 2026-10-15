@@ -23,7 +23,7 @@ Some of the analysis results that `multilspy` can provide are:
 - Please create an issue/PR to add any other LSP request not listed above
 
 ## Installation
-It is ideal to create a new virtual environment with `python>=3.10`. To create a virtual environment using conda and activate it:
+Multilspy requires Python 3.10 or newer. We recommend creating a new virtual environment. To create a virtual environment using conda and activate it:
 ```
 conda create -n multilspy_env python=3.10
 conda activate multilspy_env
@@ -54,6 +54,8 @@ pip install multilspy
 | scala | Metals |
 | swift | SourceKit-LSP |
 | elixir | Expert |
+| lua | LuaLS |
+| bash | bash-language-server |
 
 
 ## Usage
@@ -63,7 +65,7 @@ from multilspy import SyncLanguageServer
 from multilspy.multilspy_config import MultilspyConfig
 from multilspy.multilspy_logger import MultilspyLogger
 ...
-config = MultilspyConfig.from_dict({"code_language": "java"}) # Also supports "python", "rust", "csharp", "typescript", "javascript", "go", "dart", "ruby", "kotlin", "cpp", "php", "scala", "swift", "elixir"
+config = MultilspyConfig.from_dict({"code_language": "java"}) # Also supports "python", "rust", "csharp", "typescript", "javascript", "go", "dart", "ruby", "kotlin", "cpp", "php", "scala", "swift", "elixir", "lua", "bash"
 logger = MultilspyLogger()
 lsp = SyncLanguageServer.create(config, logger, "/abs/path/to/project/root/")
 with lsp.start_server():

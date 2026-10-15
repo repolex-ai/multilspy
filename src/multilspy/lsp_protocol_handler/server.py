@@ -313,7 +313,7 @@ class LanguageServerHandler:
         """Try to terminate the process gracefully, then forcefully if necessary."""
         # First try to terminate the process tree gracefully
         self._signal_process_tree(process, terminate=True)
-    
+
         # Wait for the process to exit (with timeout)
         try:
             await asyncio.wait_for(process.wait(), timeout=10)

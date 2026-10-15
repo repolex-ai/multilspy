@@ -105,6 +105,7 @@ class LanguageServer:
             from multilspy.language_servers.typescript_language_server.typescript_language_server import (
                 TypeScriptLanguageServer,
             )
+
             return TypeScriptLanguageServer(config, logger, repository_root_path)
         elif config.code_language == Language.GO:
             from multilspy.language_servers.gopls.gopls import Gopls
@@ -505,6 +506,9 @@ class LanguageServer:
             new_item["absolutePath"] = PathUtils.uri_to_path(new_item["uri"])
             new_item["relativePath"] = PathUtils.get_relative_path(new_item["absolutePath"], self.repository_root_path)
             ret.append(multilspy_types.Location(**new_item))
+        elif response is None:
+            # LSP spec allows null response when no definition is found
+            pass
         else:
             assert False, f"Unexpected response from Language Server: {response}"
 
@@ -606,13 +610,15 @@ class LanguageServer:
                 }
                 response: Union[List[LSPTypes.CompletionItem], LSPTypes.CompletionList, None] = None
 
-                num_retries = 0
-                while response is None or (response["isIncomplete"] and num_retries < 30):
+                for _ in range(30):
                     await self.completions_available.wait()
                     response = await self.server.send.completion(completion_params)
+                    if response is None:
+                        return None, completion_params
                     if isinstance(response, list):
                         response = {"items": response, "isIncomplete": False}
-                    num_retries += 1
+                    if not response["isIncomplete"]:
+                        break
 
                 return response, completion_params
 
@@ -850,6 +856,7 @@ class LanguageServer:
 
         return ret
 
+
 @ensure_all_methods_implemented(LanguageServer)
 class SyncLanguageServer:
     """
@@ -892,6 +899,27 @@ class SyncLanguageServer:
         """
         return SyncLanguageServer(LanguageServer.create(config, logger, repository_root_path), timeout=timeout)
 
+    def _call_on_loop(self, callback, *args):
+        """Run buffer and transport operations on the same thread as requests."""
+        if self.loop is None or not self.loop.is_running():
+            raise MultilspyException("Language Server not started")
+        try:
+            running_loop = asyncio.get_running_loop()
+        except RuntimeError:
+            running_loop = None
+        if running_loop is self.loop:
+            return callback(*args)
+
+        async def invoke():
+            return callback(*args)
+
+        future = asyncio.run_coroutine_threadsafe(invoke(), self.loop)
+        try:
+            return future.result(timeout=self.timeout)
+        except BaseException:
+            future.cancel()
+            raise
+
     @contextmanager
     def open_file(self, relative_file_path: str) -> Iterator[None]:
         """
@@ -899,8 +927,15 @@ class SyncLanguageServer:
 
         :param relative_file_path: The relative path of the file to open.
         """
-        with self.language_server.open_file(relative_file_path):
+        ctx = self.language_server.open_file(relative_file_path)
+        self._call_on_loop(ctx.__enter__)
+        try:
             yield
+        except BaseException as exc:
+            if not self._call_on_loop(ctx.__exit__, type(exc), exc, exc.__traceback__):
+                raise
+        else:
+            self._call_on_loop(ctx.__exit__, None, None, None)
 
     def insert_text_at_position(
         self, relative_file_path: str, line: int, column: int, text_to_be_inserted: str
@@ -914,7 +949,9 @@ class SyncLanguageServer:
         :param column: The column number at which text should be inserted.
         :param text_to_be_inserted: The text to insert.
         """
-        return self.language_server.insert_text_at_position(relative_file_path, line, column, text_to_be_inserted)
+        return self._call_on_loop(
+            self.language_server.insert_text_at_position, relative_file_path, line, column, text_to_be_inserted
+        )
 
     def delete_text_between_positions(
         self,
@@ -925,7 +962,7 @@ class SyncLanguageServer:
         """
         Delete text between the given start and end positions in the given file and return the deleted text.
         """
-        return self.language_server.delete_text_between_positions(relative_file_path, start, end)
+        return self._call_on_loop(self.language_server.delete_text_between_positions, relative_file_path, start, end)
 
     def get_open_file_text(self, relative_file_path: str) -> str:
         """
@@ -933,7 +970,7 @@ class SyncLanguageServer:
 
         :param relative_file_path: The relative path of the file to open.
         """
-        return self.language_server.get_open_file_text(relative_file_path)
+        return self._call_on_loop(self.language_server.get_open_file_text, relative_file_path)
    
     @contextmanager
     def start_server(self) -> Iterator["SyncLanguageServer"]:
@@ -943,18 +980,38 @@ class SyncLanguageServer:
         :return: None
         """
         self.loop = asyncio.new_event_loop()
-        loop_thread = threading.Thread(target=self.loop.run_forever, daemon=True)
-        loop_thread.start()
-        ctx = self.language_server.start_server()
-        asyncio.run_coroutine_threadsafe(ctx.__aenter__(), loop=self.loop).result()
+        self.loop_thread = threading.Thread(target=self.loop.run_forever, daemon=True)
+        self.loop_thread.start()
+
+        async def initialize(ctx):
+            try:
+                await asyncio.wait_for(ctx.__aenter__(), timeout=self.timeout)
+            except BaseException:
+                # Initialization can fail before the adapter reaches its cleanup
+                # block. Stop any process it has already launched.
+                try:
+                    await self.language_server.server.stop()
+                except Exception as exc:
+                    self.language_server.logger.log(f"Failed to clean up language server: {exc}", logging.ERROR)
+                raise
+
         try:
-            yield self
+            ctx = self.language_server.start_server()
+            try:
+                asyncio.run_coroutine_threadsafe(initialize(ctx), loop=self.loop).result()
+            except asyncio.TimeoutError as exc:
+                # asyncio.TimeoutError was a separate exception before Python 3.11.
+                raise TimeoutError("Language server initialization timed out") from exc
+            try:
+                yield self
+            finally:
+                asyncio.run_coroutine_threadsafe(
+                    ctx.__aexit__(None, None, None), loop=self.loop
+                ).result()
         finally:
-            asyncio.run_coroutine_threadsafe(
-                ctx.__aexit__(None, None, None), loop=self.loop
-            ).result()
             self.loop.call_soon_threadsafe(self.loop.stop)
-            loop_thread.join()
+            self.loop_thread.join()
+            self.loop.close()
 
     def request_definition(
         self, file_path: str, line: int, column: int, timeout: Optional[float] = None

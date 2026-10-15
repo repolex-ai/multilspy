@@ -74,7 +74,7 @@ class RustAnalyzer(LanguageServer):
                     logger, dependency["url"], rustanalyzer_ls_dir, dependency["archiveType"]
                 )
         assert os.path.exists(rustanalyzer_executable_path)
-        os.chmod(rustanalyzer_executable_path, stat.S_IEXEC)
+        os.chmod(rustanalyzer_executable_path, os.stat(rustanalyzer_executable_path).st_mode | stat.S_IEXEC)
 
         return rustanalyzer_executable_path
 
@@ -117,21 +117,6 @@ class RustAnalyzer(LanguageServer):
         # LanguageServer has been shutdown
         """
 
-        async def register_capability_handler(params):
-            assert "registrations" in params
-            for registration in params["registrations"]:
-                if registration["method"] == "workspace/executeCommand":
-                    self.initialize_searcher_command_available.set()
-                    self.resolve_main_method_available.set()
-            return
-
-        async def lang_status_handler(params):
-            # TODO: Should we wait for
-            # server -> client: {'jsonrpc': '2.0', 'method': 'language/status', 'params': {'type': 'ProjectStatus', 'message': 'OK'}}
-            # Before proceeding?
-            if params["type"] == "ServiceReady" and params["message"] == "ServiceReady":
-                self.service_ready_event.set()
-
         async def execute_client_command_handler(params):
             return []
 
@@ -145,8 +130,8 @@ class RustAnalyzer(LanguageServer):
         async def window_log_message(msg):
             self.logger.log(f"LSP: window/logMessage: {msg}", logging.INFO)
 
-        self.server.on_request("client/registerCapability", register_capability_handler)
-        self.server.on_notification("language/status", lang_status_handler)
+        self.server.on_request("client/registerCapability", do_nothing)
+        self.server.on_notification("language/status", do_nothing)
         self.server.on_notification("window/logMessage", window_log_message)
         self.server.on_request("workspace/executeClientCommand", execute_client_command_handler)
         self.server.on_notification("$/progress", do_nothing)
