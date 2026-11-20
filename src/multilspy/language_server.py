@@ -483,16 +483,17 @@ class LanguageServer:
                     new_item["relativePath"] = PathUtils.get_relative_path(new_item["absolutePath"], self.repository_root_path)
                     ret.append(multilspy_types.Location(new_item))
                 elif (
-                    LSPConstants.ORIGIN_SELECTION_RANGE in item
-                    and LSPConstants.TARGET_URI in item
-                    and LSPConstants.TARGET_RANGE in item
-                    and LSPConstants.TARGET_SELECTION_RANGE in item
+                    LSPConstants.TARGET_URI in item
+                    and (
+                        LSPConstants.TARGET_SELECTION_RANGE in item
+                        or LSPConstants.TARGET_RANGE in item
+                    )
                 ):
                     new_item: multilspy_types.Location = {}
                     new_item["uri"] = item[LSPConstants.TARGET_URI]
                     new_item["absolutePath"] = PathUtils.uri_to_path(new_item["uri"])
                     new_item["relativePath"] = PathUtils.get_relative_path(new_item["absolutePath"], self.repository_root_path)
-                    new_item["range"] = item[LSPConstants.TARGET_SELECTION_RANGE]
+                    new_item["range"] = item.get(LSPConstants.TARGET_SELECTION_RANGE) or item[LSPConstants.TARGET_RANGE]
                     ret.append(multilspy_types.Location(**new_item))
                 else:
                     assert False, f"Unexpected response from Language Server: {item}"
