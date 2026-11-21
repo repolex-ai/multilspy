@@ -264,3 +264,79 @@ def test_bash_classification():
     assert result.package_relative_path == "git"
     assert result.ecosystem == "BASH"
 
+
+def test_rust_stdlib_classification():
+    path = "/home/runner/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/lib/rustlib/src/rust/library/core/src/macros/mod.rs"
+    result = PathClassifier.classify(path, "/home/runner/work/valuable/valuable")
+    assert result.is_external is True
+    assert result.ecosystem == "RUST_STDLIB"
+    assert result.package_name == "core/src/macros/mod.rs"
+    assert result.package_relative_path == "core/src/macros/mod.rs"
+
+
+def test_js_stdlib_classification():
+    # Bundled ts-lsp TypeScript lib declarations must NOT misclassify as NPM 'typescript'
+    path = "/home/runner/.multilspy/lsp/ts-lsp/node_modules/typescript/lib/lib.es5.d.ts"
+    result = PathClassifier.classify(path, "/home/runner/work/pkgs/pkgs")
+    assert result.is_external is True
+    assert result.ecosystem == "JS_STDLIB"
+    assert result.package_name == "lib.es5.d.ts"
+    assert result.package_relative_path == "lib/lib.es5.d.ts"
+
+    # Regular NPM package still classifies as NPM
+    npm_path = "/home/runner/work/pkgs/pkgs/node_modules/lodash/index.js"
+    npm_res = PathClassifier.classify(npm_path, "/home/runner/work/pkgs/pkgs")
+    assert npm_res.ecosystem == "NPM"
+    assert npm_res.package_name == "lodash"
+
+
+def test_python_stdlib_classification():
+    # Jedi typeshed stdlib must NOT misclassify as PYPI 'jedi'
+    path = "/home/runner/.local/share/uv/tools/repolex/lib/python3.13/site-packages/jedi/third_party/typeshed/stdlib/3/builtins.pyi"
+    result = PathClassifier.classify(path, "/home/runner/work/deplock/deplock")
+    assert result.is_external is True
+    assert result.ecosystem == "PYTHON_STDLIB"
+    assert result.package_name == "builtins"
+    assert result.package_relative_path == "builtins.pyi"
+
+    # Submodule in typeshed
+    sub = "/home/runner/.venv/lib/python3.13/site-packages/jedi/third_party/typeshed/stdlib/asyncio/tasks.pyi"
+    sub_res = PathClassifier.classify(sub)
+    assert sub_res.ecosystem == "PYTHON_STDLIB"
+    assert sub_res.package_name == "asyncio/tasks"
+
+    # CPython stdlib outside site-packages
+    cpython = "/usr/lib/python3.13/posixpath.py"
+    cp_res = PathClassifier.classify(cpython)
+    assert cp_res.is_external is True
+    assert cp_res.ecosystem == "PYTHON_STDLIB"
+    assert cp_res.package_name == "posixpath"
+
+    # Package __init__.py in CPython stdlib
+    pkg_init = "/usr/lib/python3.13/logging/__init__.py"
+    init_res = PathClassifier.classify(pkg_init)
+    assert init_res.ecosystem == "PYTHON_STDLIB"
+    assert init_res.package_name == "logging"
+
+    # Regular PyPI package in site-packages still classifies as PYPI
+    pypi = "/home/runner/.venv/lib/python3.13/site-packages/requests/api.py"
+    pypi_res = PathClassifier.classify(pypi)
+    assert pypi_res.ecosystem == "PYPI"
+    assert pypi_res.package_name == "requests"
+
+
+def test_go_stdlib_classification():
+    path = "/usr/local/go/src/net/http/client.go"
+    result = PathClassifier.classify(path, "/home/runner/work/app/app")
+    assert result.is_external is True
+    assert result.ecosystem == "GO_STDLIB"
+    assert result.package_name == "net/http"
+    assert result.package_relative_path == "net/http/client.go"
+
+    # Go module cache still classifies as GO (not GO_STDLIB)
+    mod = "/home/runner/go/pkg/mod/github.com/pkg/errors@v0.9.1/errors.go"
+    mod_res = PathClassifier.classify(mod)
+    assert mod_res.ecosystem == "GO"
+    assert mod_res.package_name == "github.com/pkg/errors"
+
+

@@ -271,8 +271,20 @@ class PathClassifier:
                 )
 
         # -------------------------------------------------------------------------
-        # 5. JavaScript / TypeScript (NPM)
+        # 5. JavaScript / TypeScript (JS Stdlib & NPM)
         # -------------------------------------------------------------------------
+        # TS/JS stdlib declarations (must precede generic node_modules/ rule so
+        # ts-lsp's bundled typescript/lib/lib.*.d.ts is never misclassified as NPM)
+        m = re.search(r"/typescript/lib/(lib\.[^/]+\.d\.ts)$", norm_path)
+        if m:
+            lib_file = m.group(1)
+            return PathClassification(
+                is_external=True,
+                package_name=lib_file,
+                package_relative_path=f"lib/{lib_file}",
+                ecosystem="JS_STDLIB",
+            )
+
         m = re.search(
             r"(?:^|/)node_modules/(@[a-zA-Z0-9_.-]+/[a-zA-Z0-9_.-]+|[a-zA-Z0-9_.-]+)/(.*)$",
             norm_path,
@@ -288,8 +300,36 @@ class PathClassifier:
             )
 
         # -------------------------------------------------------------------------
-        # 6. Python (PyPI)
+        # 6. Python (Python Stdlib & PyPI)
         # -------------------------------------------------------------------------
+        # Typeshed stdlib (must precede generic site-packages/ rule so jedi's
+        # bundled typeshed is never misclassified as PYPI package 'jedi')
+        m = re.search(r"/typeshed/stdlib/(?:(?:2and3|2|3)/)?(.+)$", norm_path)
+        if m:
+            rel = m.group(1)
+            mod = re.sub(r"(?:/__init__)?\.pyi?$", "", rel)
+            return PathClassification(
+                is_external=True,
+                package_name=mod,
+                package_relative_path=rel,
+                ecosystem="PYTHON_STDLIB",
+            )
+
+        # CPython stdlib (excluding site-packages / dist-packages)
+        m = re.search(
+            r"/lib/python3\.\d+/(?!(?:site-packages|dist-packages)/)(.+)$",
+            norm_path,
+        )
+        if m:
+            rel = m.group(1)
+            mod = re.sub(r"(?:/__init__)?\.pyi?$", "", rel)
+            return PathClassification(
+                is_external=True,
+                package_name=mod,
+                package_relative_path=rel,
+                ecosystem="PYTHON_STDLIB",
+            )
+
         m = re.search(
             r"(?:^|/)(?:site-packages|dist-packages)/([a-zA-Z0-9_.-]+)/(.*)$",
             norm_path,
@@ -311,8 +351,20 @@ class PathClassifier:
             )
 
         # -------------------------------------------------------------------------
-        # 7. Rust (Cargo)
+        # 7. Rust (Rust Stdlib & Cargo)
         # -------------------------------------------------------------------------
+        # Rust toolchain stdlib: .../lib/rustlib/src/rust/library/<crate>/<rest>
+        m = re.search(r"/lib/rustlib/src/rust/library/([^/]+)/(.*)$", norm_path)
+        if m:
+            crate = m.group(1)
+            rest = m.group(2)
+            return PathClassification(
+                is_external=True,
+                package_name=f"{crate}/{rest}",
+                package_relative_path=f"{crate}/{rest}",
+                ecosystem="RUST_STDLIB",
+            )
+
         # Registry cache: .cargo/registry/src/.../{pkg}-{version}/...
         m = re.search(r"\.cargo/registry/src/[^/]+/([^/]+)/(.*)$", norm_path)
         if m:
@@ -344,8 +396,20 @@ class PathClassifier:
             )
 
         # -------------------------------------------------------------------------
-        # 8. Go (Go Modules / Vendor)
+        # 8. Go (Go Stdlib & Go Modules / Vendor)
         # -------------------------------------------------------------------------
+        # Go stdlib: .../go/src/<pkg>/<file>.go (not /go/pkg/mod/)
+        m = re.search(r"/go/src/(.+?)/([^/]+\.go)$", norm_path)
+        if m:
+            pkg = m.group(1)
+            fname = m.group(2)
+            return PathClassification(
+                is_external=True,
+                package_name=pkg,
+                package_relative_path=f"{pkg}/{fname}",
+                ecosystem="GO_STDLIB",
+            )
+
         m = re.search(r"/go/pkg/mod/(.+?)@v?([^/]+)/(.*)$", norm_path)
         if m:
             return PathClassification(
