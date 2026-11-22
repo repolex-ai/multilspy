@@ -105,3 +105,35 @@ def test_successful_startup_always_closes_loop(servers, body_error):
     except ValueError as exc:
         assert body_error and str(exc) == "body failed"
     assert_stopped(server)
+
+
+def test_default_startup_timeout_enforced_when_timeout_none(tmp_path, monkeypatch):
+    """SyncLanguageServer(timeout=None) still enforces DEFAULT_STARTUP_TIMEOUT."""
+    monkeypatch.setattr(SyncLanguageServer, "DEFAULT_STARTUP_TIMEOUT", 0.5)
+    underlying = StartupServer(tmp_path, delay=5)
+    server = SyncLanguageServer(underlying, timeout=None)
+    with pytest.raises((TimeoutError, concurrent.futures.TimeoutError)):
+        with server.start_server():
+            pytest.fail("Startup should have hit DEFAULT_STARTUP_TIMEOUT")
+    assert underlying.cancelled
+    assert_stopped(server)
+
+
+def test_shutdown_timeout_forces_stop_and_closes_loop(tmp_path):
+    """A hanging __aexit__ must not wedge the caller indefinitely."""
+    class HangingShutdownServer(StartupServer):
+        @asynccontextmanager
+        async def start_server(self):
+            async with LanguageServer.start_server(self):
+                await self.server.start()
+                self.process = self.server.process
+                try:
+                    yield self
+                finally:
+                    await asyncio.sleep(60)
+
+    underlying = HangingShutdownServer(tmp_path)
+    server = SyncLanguageServer(underlying, timeout=0.5)
+    with server.start_server():
+        assert underlying.server_started
+    assert_stopped(server)

@@ -973,6 +973,9 @@ class SyncLanguageServer:
         """
         return self._call_on_loop(self.language_server.get_open_file_text, relative_file_path)
    
+    DEFAULT_STARTUP_TIMEOUT: float = 120.0
+    DEFAULT_SHUTDOWN_TIMEOUT: float = 45.0
+
     @contextmanager
     def start_server(self) -> Iterator["SyncLanguageServer"]:
         """
@@ -984,9 +987,12 @@ class SyncLanguageServer:
         self.loop_thread = threading.Thread(target=self.loop.run_forever, daemon=True)
         self.loop_thread.start()
 
+        startup_timeout = self.timeout if self.timeout is not None else self.DEFAULT_STARTUP_TIMEOUT
+        shutdown_timeout = self.timeout if self.timeout is not None else self.DEFAULT_SHUTDOWN_TIMEOUT
+
         async def initialize(ctx):
             try:
-                await asyncio.wait_for(ctx.__aenter__(), timeout=self.timeout)
+                await asyncio.wait_for(ctx.__aenter__(), timeout=startup_timeout)
             except BaseException:
                 # Initialization can fail before the adapter reaches its cleanup
                 # block. Stop any process it has already launched.
@@ -995,6 +1001,19 @@ class SyncLanguageServer:
                 except Exception as exc:
                     self.language_server.logger.log(f"Failed to clean up language server: {exc}", logging.ERROR)
                 raise
+
+        async def teardown(ctx):
+            try:
+                await asyncio.wait_for(ctx.__aexit__(None, None, None), timeout=shutdown_timeout)
+            except (asyncio.TimeoutError, TimeoutError):
+                self.language_server.logger.log(
+                    f"Language server shutdown timed out after {shutdown_timeout}s; forcing stop",
+                    logging.WARNING,
+                )
+                try:
+                    await asyncio.wait_for(self.language_server.server.stop(), timeout=10.0)
+                except Exception as exc:
+                    self.language_server.logger.log(f"Failed to force-stop language server: {exc}", logging.ERROR)
 
         try:
             ctx = self.language_server.start_server()
@@ -1006,13 +1025,19 @@ class SyncLanguageServer:
             try:
                 yield self
             finally:
-                asyncio.run_coroutine_threadsafe(
-                    ctx.__aexit__(None, None, None), loop=self.loop
-                ).result()
+                try:
+                    asyncio.run_coroutine_threadsafe(
+                        teardown(ctx), loop=self.loop
+                    ).result(timeout=shutdown_timeout + 15.0)
+                except Exception as exc:
+                    self.language_server.logger.log(
+                        f"Language server teardown failed: {exc}", logging.WARNING
+                    )
         finally:
             self.loop.call_soon_threadsafe(self.loop.stop)
-            self.loop_thread.join()
-            self.loop.close()
+            self.loop_thread.join(timeout=10.0)
+            if not self.loop.is_running():
+                self.loop.close()
 
     def request_definition(
         self, file_path: str, line: int, column: int, timeout: Optional[float] = None
