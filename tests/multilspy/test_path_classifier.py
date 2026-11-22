@@ -340,3 +340,40 @@ def test_go_stdlib_classification():
     assert mod_res.package_name == "github.com/pkg/errors"
 
 
+def test_cargo_prerelease_version_classification():
+    # Prerelease version suffixes like -0.10.0-rc-2 must not break crate/version split
+    path = "/home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/rand_core-0.10.0-rc-2/src/le.rs"
+    res = PathClassifier.classify(path, "/home/runner/work/rngs/rngs")
+    assert res.is_external is True
+    assert res.ecosystem == "CARGO"
+    assert res.package_name == "rand_core"
+    assert res.version == "0.10.0-rc-2"
+    assert res.package_relative_path == "src/le.rs"
+
+    # Hyphenated crate name + semver with build metadata
+    path2 = "/home/runner/.cargo/registry/src/index.crates.io-123/my-crate-2-1.2.3-alpha.1+build.4/src/lib.rs"
+    res2 = PathClassifier.classify(path2)
+    assert res2.ecosystem == "CARGO"
+    assert res2.package_name == "my-crate-2"
+    assert res2.version == "1.2.3-alpha.1+build.4"
+
+
+def test_jedi_bundled_third_party_stubs_classification():
+    # Bundled django-stubs outside typeshed must classify as 'django-stubs', not 'jedi'
+    path = "/home/runner/.local/share/uv/tools/repolex/lib/python3.13/site-packages/jedi/third_party/django-stubs/django-stubs/db/models/fields/__init__.pyi"
+    res = PathClassifier.classify(path, "/home/runner/work/bolt-python/bolt-python")
+    assert res.is_external is True
+    assert res.ecosystem == "PYPI"
+    assert res.package_name == "django-stubs"
+    assert res.package_relative_path == "django-stubs/db/models/fields/__init__.pyi"
+
+    # Bundled typeshed third_party stubs must classify under the stubbed package, not 'jedi'
+    path2 = "/home/runner/.local/share/uv/tools/repolex/lib/python3.13/site-packages/jedi/third_party/typeshed/third_party/2and3/requests/api.pyi"
+    res2 = PathClassifier.classify(path2)
+    assert res2.is_external is True
+    assert res2.ecosystem == "PYPI"
+    assert res2.package_name == "requests"
+    assert res2.package_relative_path == "api.pyi"
+
+
+

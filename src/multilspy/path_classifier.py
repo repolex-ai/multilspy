@@ -315,6 +315,33 @@ class PathClassifier:
                 ecosystem="PYTHON_STDLIB",
             )
 
+        # Jedi bundled typeshed third-party stubs (must precede site-packages/
+        # so they classify under the stubbed PyPI package, not 'jedi')
+        m = re.search(
+            r"/jedi/third_party/typeshed/third_party/(?:(?:2and3|2|3)/)?([a-zA-Z0-9_.-]+)/(.*)$",
+            norm_path,
+        )
+        if m:
+            return PathClassification(
+                is_external=True,
+                package_name=m.group(1),
+                package_relative_path=m.group(2),
+                ecosystem="PYPI",
+            )
+
+        # Jedi bundled third-party stub packages outside typeshed (e.g. django-stubs)
+        m = re.search(
+            r"/jedi/third_party/(?!typeshed/)([a-zA-Z0-9_.-]+)/(.*)$",
+            norm_path,
+        )
+        if m:
+            return PathClassification(
+                is_external=True,
+                package_name=m.group(1),
+                package_relative_path=m.group(2),
+                ecosystem="PYPI",
+            )
+
         # CPython stdlib (excluding site-packages / dist-packages)
         m = re.search(
             r"/lib/python3\.\d+/(?!(?:site-packages|dist-packages)/)(.+)$",
@@ -370,13 +397,19 @@ class PathClassifier:
         if m:
             pkg_with_version = m.group(1)
             rel = m.group(2)
-            parts = pkg_with_version.rsplit("-", 1)
-            if len(parts) == 2 and re.match(r"^[\d.]+", parts[1]):
-                pkg = parts[0]
-                version = parts[1]
+            # Match semver (including prerelease/build suffixes like 0.10.0-rc-2 or 1.0.0-alpha.1+build)
+            ver_match = re.match(r"^(.+?)-(\d+\.\d+\.\d+(?:[-+].*)?)$", pkg_with_version)
+            if ver_match:
+                pkg = ver_match.group(1)
+                version = ver_match.group(2)
             else:
-                pkg = pkg_with_version
-                version = None
+                parts = pkg_with_version.rsplit("-", 1)
+                if len(parts) == 2 and re.match(r"^[\d.]+", parts[1]):
+                    pkg = parts[0]
+                    version = parts[1]
+                else:
+                    pkg = pkg_with_version
+                    version = None
             return PathClassification(
                 is_external=True,
                 package_name=pkg,
